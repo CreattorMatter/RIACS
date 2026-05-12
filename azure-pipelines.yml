@@ -1,0 +1,143 @@
+# ──────────────────────────────────────────────────────────────
+# Pipeline: servicio-reintegros
+# - Push a main  → Build + Test + Deploy automático a dev
+# - Run manual   → Elegís rama + ambiente destino desde Azure DevOps
+# ──────────────────────────────────────────────────────────────
+
+trigger:
+  branches:
+    include:
+      - main
+
+# ── Parámetros visibles al ejecutar manualmente ──
+parameters:
+  - name: environment
+    displayName: 'Ambiente destino'
+    type: string
+    default: 'dev'
+    values:
+      - dev
+      # Descomentar cuando existan:
+      # - staging
+      # - production
+
+  - name: skipTests
+    displayName: 'Saltar tests'
+    type: boolean
+    default: false
+
+# ── Variables por ambiente ──
+# Agregar bloques para staging/production cuando estén listos.
+variables:
+  AGENT_POOL: 'SStechOne-SelfHosted'
+  DOTNET_VERSION: '8.0.x'
+  PROJECT_PATH: 'servicio-reintegros/ServicioReintegrosAssistCard.csproj'
+  TEST_PROJECT_PATH: 'servicio-reintegros/tests/ServicioReintegros.Tests.csproj'
+
+  ${{ if eq(parameters.environment, 'dev') }}:
+    AZURE_SERVICE_CONNECTION: 'sc-smartsolutions-dev'
+    AZURE_WEBAPP_NAME: 'servicio-reintegros'
+    AZURE_ENVIRONMENT: 'dev'
+
+  # ${{ if eq(parameters.environment, 'staging') }}:
+  #   AZURE_SERVICE_CONNECTION: 'sc-smartsolutions-staging'
+  #   AZURE_WEBAPP_NAME: 'servicio-reintegros-staging'
+  #   AZURE_ENVIRONMENT: 'staging'
+
+  # ${{ if eq(parameters.environment, 'production') }}:
+  #   AZURE_SERVICE_CONNECTION: 'sc-smartsolutions-prod'
+  #   AZURE_WEBAPP_NAME: 'servicio-reintegros-prod'
+  #   AZURE_ENVIRONMENT: 'production'
+
+stages:
+  # ── 1. Build ──
+  - stage: Build
+    displayName: 'Build (${{ parameters.environment }})'
+    jobs:
+      - job: Build
+        pool:
+          name: '$(AGENT_POOL)'
+        steps:
+          - task: UseDotNet@2
+            inputs:
+              packageType: sdk
+              version: '$(DOTNET_VERSION)'
+
+          - script: dotnet restore "$(PROJECT_PATH)"
+            displayName: Restore
+
+          - script: dotnet build "$(PROJECT_PATH)" -c Release --no-restore
+            displayName: Build
+
+          - script: dotnet publish "$(PROJECT_PATH)" -c Release --no-build -o "$(Build.ArtifactStagingDirectory)/publish"
+            displayName: Publish
+
+          - task: ArchiveFiles@2
+            inputs:
+              rootFolderOrFile: '$(Build.ArtifactStagingDirectory)/publish'
+              includeRootFolder: false
+              archiveType: zip
+              archiveFile: '$(Build.ArtifactStagingDirectory)/app.zip'
+              replaceExistingArchive: true
+
+          - publish: '$(Build.ArtifactStagingDirectory)/app.zip'
+            artifact: drop
+
+  # ── 2. Test ──
+  - stage: Test
+    displayName: 'Test'
+    dependsOn: Build
+    condition: and(succeeded(), eq('${{ parameters.skipTests }}', 'false'))
+    jobs:
+      - job: Test
+        pool:
+          name: '$(AGENT_POOL)'
+        steps:
+          - task: UseDotNet@2
+            inputs:
+              packageType: sdk
+              version: '$(DOTNET_VERSION)'
+
+          - script: dotnet test "$(TEST_PROJECT_PATH)" --configuration Release --logger trx --results-directory "$(Agent.TempDirectory)/TestResults"
+            displayName: 'Run Unit Tests'
+
+          - task: PublishTestResults@2
+            condition: succeededOrFailed()
+            inputs:
+              testResultsFormat: VSTest
+              testResultsFiles: '$(Agent.TempDirectory)/TestResults/*.trx'
+              testRunTitle: 'Unit Tests - $(Build.SourceBranchName)'
+
+  # ── 3. Deploy ──
+  - stage: Deploy
+    displayName: 'Deploy → ${{ parameters.environment }}'
+    dependsOn:
+      - Build
+      - Test
+    condition: |
+      and(
+        succeeded('Build'),
+        or(
+          succeeded('Test'),
+          eq('${{ parameters.skipTests }}', 'true')
+        )
+      )
+    jobs:
+      - deployment: Deploy
+        displayName: 'Deploy to ${{ parameters.environment }}'
+        environment: '$(AZURE_ENVIRONMENT)'
+        pool:
+          name: '$(AGENT_POOL)'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - download: current
+                  artifact: drop
+
+                - task: AzureWebApp@1
+                  displayName: 'Deploy to $(AZURE_WEBAPP_NAME)'
+                  inputs:
+                    azureSubscription: '$(AZURE_SERVICE_CONNECTION)'
+                    appName: '$(AZURE_WEBAPP_NAME)'
+                    package: '$(Pipeline.Workspace)/drop/app.zip'

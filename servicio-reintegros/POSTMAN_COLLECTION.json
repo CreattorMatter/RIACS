@@ -1,0 +1,38 @@
+{
+  "info": {
+    "name": "Servicio Reintegros AssistCard",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health",
+      "request": { "method": "GET", "url": "{{baseUrl}}/healthz" }
+    },
+    {
+      "name": "Readiness",
+      "request": { "method": "GET", "url": "{{baseUrl}}/readyz" }
+    },
+    {
+      "name": "Metrics",
+      "request": { "method": "GET", "url": "{{baseUrl}}/metrics" }
+    },
+    {
+      "name": "Webhook WhatsApp (POST)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {"key": "Content-Type", "value": "application/json"},
+          {"key": "X-Hub-Signature-256", "value": "sha256=SIMULADO"}
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"object\": \"whatsapp_business_account\",\n  \"entry\": []\n}"
+        },
+        "url": "{{baseUrl}}/webhook/whatsapp"
+      }
+    }
+  ],
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" }
+  ]
+}

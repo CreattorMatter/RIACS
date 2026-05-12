@@ -1,0 +1,12 @@
+{
+  "profiles": {
+    "ServicioReintegrosAssistCard": {
+      "commandName": "Project",
+      "launchBrowser": true,
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      },
+      "applicationUrl": "https://localhost:51762;http://localhost:51763"
+    }
+  }
+}
