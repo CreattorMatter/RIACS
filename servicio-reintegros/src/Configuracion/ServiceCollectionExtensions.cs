@@ -66,6 +66,10 @@ namespace ServicioReintegros.AssistCard.Configuracion
                 o.ApiKey = cfg["SEARCH_API_KEY"] ?? string.Empty;
                 o.KnowledgeBaseName = cfg["SEARCH_KNOWLEDGE_BASE_NAME"] ?? string.Empty;
                 o.IndexName = cfg["SEARCH_INDEX_NAME"] ?? string.Empty;
+                // Nombres de campos del índice (opcionales): si no se setean, quedan los defaults del indexador clásico de Blob.
+                o.ContentField = string.IsNullOrWhiteSpace(cfg["SEARCH_CONTENT_FIELD"]) ? o.ContentField : cfg["SEARCH_CONTENT_FIELD"]!;
+                o.TitleField = cfg["SEARCH_TITLE_FIELD"] ?? o.TitleField;
+                o.PathField = cfg["SEARCH_PATH_FIELD"] ?? o.PathField;
             });
 
             services.Configure<ReintegrosOpciones>(cfg.GetSection("Reintegros"));

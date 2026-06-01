@@ -333,14 +333,25 @@ namespace ServicioReintegros.AssistCard.Infraestructura.IA
                 return new KnowledgeRetrieveResult { Error = "SearchIndexNameNotResolved" };
 
             var query = ConstruirPreguntaRetrieve(prompt, contexto);
+
+            var contentField = string.IsNullOrWhiteSpace(_searchCfg.ContentField) ? "content" : _searchCfg.ContentField.Trim();
+            var titleField = _searchCfg.TitleField?.Trim() ?? string.Empty;
+            var pathField = _searchCfg.PathField?.Trim() ?? string.Empty;
+
+            var selectFields = new List<string> { contentField };
+            if (!string.IsNullOrWhiteSpace(titleField))
+                selectFields.Add(titleField);
+            if (!string.IsNullOrWhiteSpace(pathField))
+                selectFields.Add(pathField);
+
             var payload = new
             {
                 search = query,
                 top = MaxGroundingDocuments,
                 queryType = "simple",
                 searchMode = "any",
-                searchFields = "content",
-                select = "content,metadata_storage_name,metadata_storage_path"
+                searchFields = contentField,
+                select = string.Join(",", selectFields)
             };
 
             using var request = new HttpRequestMessage(HttpMethod.Post, ConstruirSearchDocsUri(indexName))
@@ -361,7 +372,7 @@ namespace ServicioReintegros.AssistCard.Infraestructura.IA
             using var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
             var rawBody = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
             var statusCode = response.StatusCode;
-            var hits = ExtraerHitsDeBusqueda(rawBody);
+            var hits = ExtraerHitsDeBusqueda(rawBody, contentField, titleField, pathField);
 
             if (statusCode == HttpStatusCode.PartialContent)
             {
@@ -902,7 +913,7 @@ namespace ServicioReintegros.AssistCard.Infraestructura.IA
             return result;
         }
 
-        private static List<SearchDocumentHit> ExtraerHitsDeBusqueda(string? json)
+        private static List<SearchDocumentHit> ExtraerHitsDeBusqueda(string? json, string contentField, string titleField, string pathField)
         {
             var hits = new List<SearchDocumentHit>();
             if (string.IsNullOrWhiteSpace(json))
@@ -921,11 +932,11 @@ namespace ServicioReintegros.AssistCard.Infraestructura.IA
                     string? path = null;
                     double? score = null;
 
-                    if (item.TryGetProperty("content", out var contentProp) && contentProp.ValueKind == JsonValueKind.String)
+                    if (item.TryGetProperty(contentField, out var contentProp) && contentProp.ValueKind == JsonValueKind.String)
                         content = contentProp.GetString();
-                    if (item.TryGetProperty("metadata_storage_name", out var nameProp) && nameProp.ValueKind == JsonValueKind.String)
+                    if (!string.IsNullOrWhiteSpace(titleField) && item.TryGetProperty(titleField, out var nameProp) && nameProp.ValueKind == JsonValueKind.String)
                         title = nameProp.GetString();
-                    if (item.TryGetProperty("metadata_storage_path", out var pathProp) && pathProp.ValueKind == JsonValueKind.String)
+                    if (!string.IsNullOrWhiteSpace(pathField) && item.TryGetProperty(pathField, out var pathProp) && pathProp.ValueKind == JsonValueKind.String)
                         path = pathProp.GetString();
                     if (item.TryGetProperty("@search.score", out var scoreProp) && scoreProp.TryGetDouble(out var rawScore))
                         score = rawScore;
